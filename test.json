@@ -1,6 +1,0 @@
-{
-    "clock": 100000,
-    "prescaler_range": [1, 10000],
-    "compare_range": [1, 255],
-    "out_freq": 1000.5
-}

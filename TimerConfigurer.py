@@ -1,25 +1,10 @@
-#  TimerConfigurer.py
-#
-#  Copyright 2015 Guillaume Le Cam
-#
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation; either version 2 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program; if not, write to the Free Software
-#  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
-#  MA 02110-1301, USA.
-#
-#
 import sys
 import json
+
+# TODO : Add comments
+
+DEFAULT_EXAMPLE_FILE = "example.json"
+DEFAULT_OUT_FILE = "result.txt"
 
 class Range:
     def __init__(self, a, b):
@@ -45,59 +30,116 @@ class Timer :
         self.prescaler_range = prescaler_range
         self.compare_range = compare_range
         self.wanted_freq = wanted_freq
-        self.error = 0
-        self.best_freq = 0
-        self.compare = 0
-        self.prescaler = 0
+        self.result_error = -1
+        self.result_freq = 0
+        self.result_compare = 0
+        self.result_prescaler = 0
 
-    def GetMinPrescaler(self):
-        min_prescaler = ComputePrescaler(self.clk_freq, self.wanted_freq, self.compare_range.get_max() )
-        min_prescaler = max(int(min_prescaler), self.prescaler_range.get_min())
-        return min_prescaler
-
-    def GetMaxPrescaler(self):
-        max_prescaler = ComputePrescaler(self.clk_freq, self.wanted_freq, self.compare_range.get_min() )
-        max_prescaler = min(int(max_prescaler+1), self.prescaler_range.get_max())
-        return max_prescaler
-
+    def __str__(self):
+        out = "Reference clock = {0} Hz\n".format(self.clk_freq)
+        out += "Prescaler range is {0} to {1}\n".format(self.prescaler_range.get_min(),\
+                                                        self.prescaler_range.get_max())
+        out += "Compare register range is {0} to {1}\n".format(self.compare_range.get_min(),\
+                                                               self.compare_range.get_max())
+        out += "Target frequency is {0} Hz\n\n".format(self.wanted_freq)
+        if(self.result_error == -1):
+            out += "No solution found with the current values!\n"
+        else :
+            out += "The best solution found is :\n"
+            out += "error = {0} Hz\n".format(self.result_error)
+            out += "out frequency = {0} Hz\n".format(self.result_freq)
+            out += "compare register = {0}\n".format(self.result_compare)
+            out += "prescaler = {0}\n".format(self.result_prescaler)
+        return out
+    
+    def SaveToFile(self, file_name):
+        f = open(file_name, "w")
+        f.write(self.__str__())
+        f.close
 
     def computeBestFreq(self):
-        print("min_prescaler = {0}, max_prescaler = {1}".format(self.GetMinPrescaler(), self.GetMaxPrescaler()))
-        current_prescaler = self.GetMinPrescaler()
-        while( current_prescaler <= self.GetMaxPrescaler()):
+        min_prescaler = int(self.wanted_freq * self.compare_range.get_max() / self.clk_freq)
+        if(min_prescaler<self.prescaler_range.get_min()):
+            print("ERROR: the prescaler range is not enough to meet the requirements")
+            return
+        current_prescaler = min_prescaler
+        while( current_prescaler <= self.prescaler_range.get_max()):
             compare_value = max(int(round(self.clk_freq / (current_prescaler * self.wanted_freq))), 1)
-            error = self.clk_freq/(current_prescaler*compare_value)-self.wanted_freq
-            print("compare_value = {0}, error = {1}".format(compare_value, error))
+            result_freq = self.clk_freq/(current_prescaler*compare_value)
+            error = abs(result_freq - self.wanted_freq)
+            if(self.result_error == -1 or error < self.result_error):
+                self.result_error = error
+                self.result_freq = result_freq
+                self.result_compare = compare_value
+                self.result_prescaler = current_prescaler
 
             if( error == 0):
                 break
             current_prescaler = current_prescaler * 2
 
 
+def PrintHelp():
+    help_string = "TimerConfigurer is a script used to find the best couple \n"
+    help_string+= "compare value/prescaler value of a timer.\n"
+    help_string+= "This script was implemented and tested with Python 2.7.\n"
+    help_string+= "Usage : TimerConfigurer <command> [<args>]\n"
+    help_string+= "  --help       : print help\n"
+    help_string+= "  -c           : create an example json file named example.json\n"
+    help_string+= "  -i file_name : file_name is a json file containing the problem constraints\n\n"
+    help_string+= "Example : TimerConfigurer.py -i test.json -o result.txt\n"
+    help_string+= "          This will read the file test.json and print the result in result.txt\n"
+    print(help_string)
+    
+def PrintDefaultFile(file_name):
+    file_str = """
+    {
+        "clock": 48000000,
+        "prescaler_range": [1, 128],
+        "compare_range": [1, 65535],
+        "out_freq": 14250
+    }
 
-def ComputePrescaler(ref_clk, wanted_freq, compare_value):
-    return (ref_clk / (wanted_freq * compare_value) )
-
-def ComputeCompareValue(ref_clk, wanted_freq, prescaler):
-    return (ref_clk / (wanted_freq * prescaler) )
-
+    """
+    f = open(file_name, "w")
+    f.write(file_str)
+    f.close()
 
 if __name__ == "__main__":
     print("Starting TimerConfigurer...")
-    print(sys.argv)
-    with open('test.json') as data_file:
-        data = json.load(data_file)
-    print(data)
+    
+    if(len(sys.argv) < 2):
+        PrintHelp()
+    else :
+        in_file = ""
+        i = 1
+        while(i<len(sys.argv)):
+            if(sys.argv[i] == "--help"):
+                PrintHelp()
+            elif(sys.argv[i] == "-c"):
+                PrintDefaultFile(DEFAULT_EXAMPLE_FILE)
+            elif(sys.argv[i] == "-i"):
+                i += 1
+                in_file = sys.argv[i]
 
-    assert(data["clock"])
-    assert(data["prescaler_range"])
-    assert(data["compare_range"])
-    assert(data["out_freq"])
+                with open(in_file) as data_file:
+                    data = json.load(data_file)
+                print(data)
 
-    prescaler_range = Range(data["prescaler_range"][0], data["prescaler_range"][1])
-    compare_range = Range(data["compare_range"][0], data["compare_range"][1])
-    timer = Timer(data["clock"], prescaler_range, compare_range, data["out_freq"])
-    timer.computeBestFreq()
+                assert(data["clock"])
+                assert(data["prescaler_range"])
+                assert(data["compare_range"])
+                assert(data["out_freq"])
+
+                prescaler_range = Range(data["prescaler_range"][0], data["prescaler_range"][1])
+                compare_range = Range(data["compare_range"][0], data["compare_range"][1])
+                timer = Timer(data["clock"], prescaler_range, compare_range, data["out_freq"])
+                timer.computeBestFreq()
+
+                timer.SaveToFile(DEFAULT_OUT_FILE)
+                print(timer)
+            else:
+                print("Command : {0} not valid!\n".format(sys.argv[i]))
+            i +=1
 
 
 
